@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>T&L Guild Party Manager</title>
+  <style>
+    :root {
+      --bg: #12151e;
+      --card-bg: #1e2330;
+      --accent: #5865f2;
+      --text: #e0e6ed;
+      --tank: #3b82f6;
+      --healer: #10b981;
+      --dps: #ef4444;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 20px;
+    }
+    h1 { margin-bottom: 5px; color: #fff; }
+    .subtitle { color: #8a99ad; margin-bottom: 20px; }
+    .layout {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 20px;
+    }
+    .panel {
+      background: var(--card-bg);
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid #2e3548;
+    }
+    input, select, button {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 10px;
+      border-radius: 5px;
+      border: 1px solid #3b445c;
+      background: #141824;
+      color: #fff;
+      box-sizing: border-box;
+    }
+    button {
+      background: var(--accent);
+      border: none;
+      font-weight: bold;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.9; }
+    .roster-list {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .player-card {
+      background: #283044;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      border-radius: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: grab;
+      border-left: 4px solid #fff;
+    }
+    .player-card[data-role="Tank"] { border-left-color: var(--tank); }
+    .player-card[data-role="Healer"] { border-left-color: var(--healer); }
+    .player-card[data-role="DPS"] { border-left-color: var(--dps); }
+    
+    .parties-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 15px;
+    }
+    .party-box {
+      background: var(--card-bg);
+      border: 1px dashed #3b445c;
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 220px;
+    }
+    .party-title {
+      font-weight: bold;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #2e3548;
+      padding-bottom: 5px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .export-section {
+      margin-top: 20px;
+    }
+    textarea {
+      width: 100%;
+      height: 120px;
+      background: #141824;
+      color: #7289da;
+      border: 1px solid #3b445c;
+      border-radius: 5px;
+      padding: 10px;
+      font-family: monospace;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>⚔️ T&L Guild Party Manager</h1>
+  <div class="subtitle">Organize your guild roster into 6-player groups and export clean Discord markdown.</div>
+
+  <div class="layout">
+    <!-- LEFT PANEL: ROSTER CREATOR -->
+    <div class="panel">
+      <h3>Add Guild Member</h3>
+      <input type="text" id="pName" placeholder="Player Name / Character">
+      <select id="pRole">
+        <option value="Tank">Tank (SnS)</option>
+        <option value="Healer">Healer (Wand)</option>
+        <option value="DPS">DPS (Staff/Bow/Dagger/GS)</option>
+      </select>
+      <input type="text" id="pWeapons" placeholder="Weapons (e.g. Staff / Dagger)">
+      <button onclick="addPlayer()">Add to Unassigned Roster</button>
+
+      <h3>Unassigned Roster (<span id="unassignedCount">0</span>)</h3>
+      <div id="roster" class="roster-list" ondragover="allowDrop(event)" ondrop="dropToRoster(event)"></div>
+    </div>
+
+    <!-- RIGHT PANEL: PARTIES & EXPORT -->
+    <div>
+      <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+        <button onclick="addParty()">+ Add Party (6 Max)</button>
+        <button onclick="exportToDiscord()" style="background: #248046;">📋 Export for Discord</button>
+      </div>
+
+      <div class="parties-grid" id="partiesContainer"></div>
+
+      <div class="export-section panel">
+        <h3>Discord Export Code</h3>
+        <textarea id="discordOutput" readonly placeholder="Click 'Export for Discord' to generate markdown text here..."></textarea>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let players = [];
+    let partyCount = 0;
+
+    function addPlayer() {
+      const name = document.getElementById('pName').value.trim();
+      const role = document.getElementById('pRole').value;
+      const weapons = document.getElementById('pWeapons').value.trim() || role;
+
+      if (!name) return alert('Please enter a player name.');
+
+      const id = 'p_' + Date.now();
+      players.push({ id, name, role, weapons, partyId: null });
+
+      document.getElementById('pName').value = '';
+      document.getElementById('pWeapons').value = '';
+      render();
+    }
+
+    function addParty() {
+      partyCount++;
+      const container = document.getElementById('partiesContainer');
+      const partyDiv = document.createElement('div');
+      partyDiv.className = 'party-box';
+      partyDiv.id = `party_${partyCount}`;
+      partyDiv.setAttribute('ondragover', 'allowDrop(event)');
+      partyDiv.setAttribute('ondrop', `dropToParty(event, ${partyCount})`);
+      
+      partyDiv.innerHTML = `
+        <div class="party-title">
+          <span>Party ${partyCount}</span>
+          <span style="font-size:0.8em; color:#8a99ad;" id="count_party_${partyCount}">0/6</span>
+        </div>
+        <div class="party-slots" id="slots_party_${partyCount}"></div>
+      `;
+      container.appendChild(partyDiv);
+    }
+
+    function render() {
+      const rosterDiv = document.getElementById('roster');
+      rosterDiv.innerHTML = '';
+
+      let unassigned = 0;
+
+      players.forEach(p => {
+        const card = createPlayerCard(p);
+        if (p.partyId === null) {
+          rosterDiv.appendChild(card);
+          unassigned++;
+        } else {
+          const slot = document.getElementById(`slots_party_${p.partyId}`);
+          if (slot) slot.appendChild(card);
+        }
+      });
+
+      document.getElementById('unassignedCount').innerText = unassigned;
+
+      // Update party counts
+      for (let i = 1; i <= partyCount; i++) {
+        const pMembers = players.filter(p => p.partyId === i);
+        const countSpan = document.getElementById(`count_party_${i}`);
+        if (countSpan) countSpan.innerText = `${pMembers.length}/6`;
+      }
+    }
+
+    function createPlayerCard(p) {
+      const div = document.createElement('div');
+      div.className = 'player-card';
+      div.dataset.role = p.role;
+      div.draggable = true;
+      div.id = p.id;
+      div.ondragstart = (e) => e.dataTransfer.setData("text", p.id);
+      
+      div.innerHTML = `
+        <div>
+          <strong>${p.name}</strong> <br>
+          <small style="color:#a0aec0;">${p.weapons}</small>
+        </div>
+        <small style="font-weight:bold;">${p.role.toUpperCase()}</small>
+      `;
+      return div;
+    }
+
+    // Drag and Drop handlers
+    function allowDrop(ev) { ev.preventDefault(); }
+
+    function dropToParty(ev, partyNum) {
+      ev.preventDefault();
+      const id = ev.dataTransfer.getData("text");
+      const currentInParty = players.filter(p => p.partyId === partyNum).length;
+      
+      if (currentInParty >= 6) return alert("Party is full! (6 player limit)");
+
+      const player = players.find(p => p.id === id);
+      if (player) {
+        player.partyId = partyNum;
+        render();
+      }
+    }
+
+    function dropToRoster(ev) {
+      ev.preventDefault();
+      const id = ev.dataTransfer.getData("text");
+      const player = players.find(p => p.id === id);
+      if (player) {
+        player.partyId = null;
+        render();
+      }
+    }
+
+    function exportToDiscord() {
+      let output = "```md\n# ⚔️ THRONE AND LIBERTY - GUILD ROSTER\n\n";
+      
+      for (let i = 1; i <= partyCount; i++) {
+        const members = players.filter(p => p.partyId === i);
+        output += `[PARTY ${i}] (${members.length}/6)\n`;
+        if (members.length === 0) {
+          output += "  (Empty)\n";
+        } else {
+          members.forEach(m => {
+            const roleTag = m.role === 'Tank' ? '🛡️ [TANK]' : m.role === 'Healer' ? '💚 [HEAL]' : '⚔️ [DPS ]';
+            output += `  ${roleTag} ${m.name.padEnd(16)} | ${m.weapons}\n`;
+          });
+        }
+        output += "\n";
+      }
+
+      const unassigned = players.filter(p => p.partyId === null);
+      if (unassigned.length > 0) {
+        output += `[BENCH / RESERVES] (${unassigned.length})\n`;
+        unassigned.forEach(m => {
+          output += `  • ${m.name} (${m.role} - ${m.weapons})\n`;
+        });
+      }
+
+      output += "```";
+      document.getElementById('discordOutput').value = output;
+    }
+
+    // Initialize with 2 default parties
+    addParty();
+    addParty();
+  </script>
+</body>
+</html>
