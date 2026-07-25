@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>T&L Guild Party Manager</title>
+  <title>T&L Guild Party Manager (Live)</title>
   <style>
     :root {
       --bg: #12151e;
@@ -21,7 +21,8 @@
       padding: 20px;
     }
     h1 { margin-bottom: 5px; color: #fff; }
-    .subtitle { color: #8a99ad; margin-bottom: 20px; }
+    .subtitle { color: #8a99ad; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+    .status-dot { width: 10px; height: 10px; background: #10b981; border-radius: 50%; display: inline-block; }
     .layout {
       display: grid;
       grid-template-columns: 300px 1fr;
@@ -51,9 +52,7 @@
       transition: opacity 0.2s;
     }
     button:hover { opacity: 0.9; }
-    .btn-danger {
-      background: #da373c;
-    }
+    .btn-danger { background: #da373c; }
     .roster-list {
       max-height: 400px;
       overflow-y: auto;
@@ -93,9 +92,7 @@
       display: flex;
       justify-content: space-between;
     }
-    .export-section {
-      margin-top: 20px;
-    }
+    .export-section { margin-top: 20px; }
     textarea {
       width: 100%;
       height: 120px;
@@ -108,38 +105,32 @@
       box-sizing: border-box;
     }
   </style>
+
+  <!-- Firebase Compatibility SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 </head>
 <body>
 
   <h1>⚔️ T&L Guild Party Manager</h1>
-  <div class="subtitle">Organize your guild roster into 6-player groups and export clean Discord markdown. Auto-saves locally!</div>
+  <div class="subtitle">
+    <span class="status-dot"></span> 
+    <strong>Live Sync Enabled:</strong> Changes update automatically for everyone on this page.
+  </div>
 
   <div class="layout">
     <!-- LEFT PANEL: ROSTER CREATOR -->
     <div class="panel">
       <h3>Add Guild Member</h3>
       <input type="text" id="pName" placeholder="Player Name / Character">
-   const firebaseConfig = {
-  apiKey: "AIzaSyCb3xxAJd4XgvGksOxBxloax4bIW0I8",
-  authDomain: "new-era-party-planner.firebaseapp.com",
-  projectId: "new-era-party-planner",
-  databaseURL: "https://new-era-party-planner-default-rtdb.firebaseio.com",
-  storageBucket: "new-era-party-planner.firebasestorage.app",
-  messagingSenderId: "943551676641",
-  appId: "1:943551676641:web:08f7122a74faf6bdc237a0",
-  measurementId: "G-E30DG883T3"
-};
-  authDomain: "new-era-party-planner.firebaseapp.com",
-  projectId: "new-era-party-planner",
-  storageBucket: "new-era-party-planner.firebasestorage.app",
-  messagingSenderId: "943551676641",
-  appId: "1:943551676641:web:08f7122a74faf6bdc237a0",
-  measurementId: "G-E30DG883T3"
-};
+      <select id="pRole">
+        <option value="Tank">Tank (SnS)</option>
+        <option value="Healer">Healer (Wand)</option>
+        <option value="DPS">DPS (Staff/Bow/Dagger/GS)</option>
+      </select>
+      <input type="text" id="pWeapons" placeholder="Weapons (e.g. Staff / Dagger)">
+      <button onclick="addPlayer()">Add to Unassigned Roster</button>
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
       <h3>Unassigned Roster (<span id="unassignedCount">0</span>)</h3>
       <div id="roster" class="roster-list" ondragover="allowDrop(event)" ondrop="dropToRoster(event)"></div>
       
@@ -163,38 +154,42 @@ const analytics = getAnalytics(app);
   </div>
 
   <script>
-    let players = [];
-    let partyCount = 0;
-
-    // Load data on start
-    window.onload = function() {
-      loadSavedData();
+    const firebaseConfig = {
+      apiKey: "AIzaSyCb3xxAJd4XgvGksOxBxloax4bIW0I8",
+      authDomain: "new-era-party-planner.firebaseapp.com",
+      projectId: "new-era-party-planner",
+      databaseURL: "https://new-era-party-planner-default-rtdb.firebaseio.com",
+      storageBucket: "new-era-party-planner.firebasestorage.app",
+      messagingSenderId: "943551676641",
+      appId: "1:943551676641:web:08f7122a74faf6bdc237a0",
+      measurementId: "G-E30DG883T3"
     };
 
-    function saveData() {
-      localStorage.setItem('tl_players', JSON.stringify(players));
-      localStorage.setItem('tl_partyCount', partyCount);
-    }
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
-    function loadSavedData() {
-      const savedPlayers = localStorage.getItem('tl_players');
-      const savedPartyCount = localStorage.getItem('tl_partyCount');
+    let players = [];
+    let partyCount = 2;
 
-      if (savedPartyCount) {
-        partyCount = parseInt(savedPartyCount);
-        for (let i = 1; i <= partyCount; i++) {
-          renderPartyBox(i);
-        }
+    // Listen to database changes in REAL TIME
+    db.ref('guild_roster').on('value', (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        players = data.players || [];
+        partyCount = data.partyCount || 2;
       } else {
-        addParty();
-        addParty();
+        players = [];
+        partyCount = 2;
       }
+      renderAll();
+    });
 
-      if (savedPlayers) {
-        players = JSON.parse(savedPlayers);
-      }
-
-      render();
+    function pushToDatabase() {
+      db.ref('guild_roster').set({
+        players: players,
+        partyCount: partyCount
+      });
     }
 
     function addPlayer() {
@@ -209,43 +204,68 @@ const analytics = getAnalytics(app);
 
       document.getElementById('pName').value = '';
       document.getElementById('pWeapons').value = '';
-      saveData();
-      render();
+      pushToDatabase();
     }
 
     function addParty() {
       partyCount++;
-      renderPartyBox(partyCount);
-      saveData();
+      pushToDatabase();
     }
 
-    function renderPartyBox(num) {
-      const container = document.getElementById('partiesContainer');
-      const partyDiv = document.createElement('div');
-      partyDiv.className = 'party-box';
-      partyDiv.id = `party_${num}`;
-      partyDiv.setAttribute('ondragover', 'allowDrop(event)');
-      partyDiv.setAttribute('ondrop', `dropToParty(event, ${num})`);
+    function deletePlayer(id) {
+      players = players.filter(p => p.id !== id);
+      pushToDatabase();
+    }
+
+    function allowDrop(ev) { ev.preventDefault(); }
+
+    function dropToParty(ev, partyNum) {
+      ev.preventDefault();
+      const id = ev.dataTransfer.getData("text");
+      const currentInParty = players.filter(p => p.partyId === partyNum).length;
       
-      partyDiv.innerHTML = `
-        <div class="party-title">
-          <span>Party ${num}</span>
-          <span style="font-size:0.8em; color:#8a99ad;" id="count_party_${num}">0/6</span>
-        </div>
-        <div class="party-slots" id="slots_party_${num}"></div>
-      `;
-      container.appendChild(partyDiv);
+      if (currentInParty >= 6) return alert("Party is full! (6 player limit)");
+
+      const player = players.find(p => p.id === id);
+      if (player) {
+        player.partyId = partyNum;
+        pushToDatabase();
+      }
     }
 
-    function render() {
+    function dropToRoster(ev) {
+      ev.preventDefault();
+      const id = ev.dataTransfer.getData("text");
+      const player = players.find(p => p.id === id);
+      if (player) {
+        player.partyId = null;
+        pushToDatabase();
+      }
+    }
+
+    function renderAll() {
+      const container = document.getElementById('partiesContainer');
+      container.innerHTML = '';
+
+      for (let i = 1; i <= partyCount; i++) {
+        const partyDiv = document.createElement('div');
+        partyDiv.className = 'party-box';
+        partyDiv.id = `party_${i}`;
+        partyDiv.setAttribute('ondragover', 'allowDrop(event)');
+        partyDiv.setAttribute('ondrop', `dropToParty(event, ${i})`);
+        
+        partyDiv.innerHTML = `
+          <div class="party-title">
+            <span>Party ${i}</span>
+            <span style="font-size:0.8em; color:#8a99ad;" id="count_party_${i}">0/6</span>
+          </div>
+          <div class="party-slots" id="slots_party_${i}"></div>
+        `;
+        container.appendChild(partyDiv);
+      }
+
       const rosterDiv = document.getElementById('roster');
       rosterDiv.innerHTML = '';
-
-      // Clear current party slot containers
-      for (let i = 1; i <= partyCount; i++) {
-        const slot = document.getElementById(`slots_party_${i}`);
-        if (slot) slot.innerHTML = '';
-      }
 
       let unassigned = 0;
 
@@ -262,7 +282,6 @@ const analytics = getAnalytics(app);
 
       document.getElementById('unassignedCount').innerText = unassigned;
 
-      // Update party count displays
       for (let i = 1; i <= partyCount; i++) {
         const pMembers = players.filter(p => p.partyId === i);
         const countSpan = document.getElementById(`count_party_${i}`);
@@ -289,40 +308,6 @@ const analytics = getAnalytics(app);
         </div>
       `;
       return div;
-    }
-
-    function deletePlayer(id) {
-      players = players.filter(p => p.id !== id);
-      saveData();
-      render();
-    }
-
-    function allowDrop(ev) { ev.preventDefault(); }
-
-    function dropToParty(ev, partyNum) {
-      ev.preventDefault();
-      const id = ev.dataTransfer.getData("text");
-      const currentInParty = players.filter(p => p.partyId === partyNum).length;
-      
-      if (currentInParty >= 6) return alert("Party is full! (6 player limit)");
-
-      const player = players.find(p => p.id === id);
-      if (player) {
-        player.partyId = partyNum;
-        saveData();
-        render();
-      }
-    }
-
-    function dropToRoster(ev) {
-      ev.preventDefault();
-      const id = ev.dataTransfer.getData("text");
-      const player = players.find(p => p.id === id);
-      if (player) {
-        player.partyId = null;
-        saveData();
-        render();
-      }
     }
 
     function exportToDiscord() {
@@ -355,14 +340,10 @@ const analytics = getAnalytics(app);
     }
 
     function clearData() {
-      if (confirm("Are you sure you want to clear all players and parties?")) {
-        localStorage.clear();
+      if (confirm("Are you sure you want to clear all players and reset parties for everyone?")) {
         players = [];
-        partyCount = 0;
-        document.getElementById('partiesContainer').innerHTML = '';
-        addParty();
-        addParty();
-        render();
+        partyCount = 2;
+        pushToDatabase();
       }
     }
   </script>
