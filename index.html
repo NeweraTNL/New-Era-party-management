@@ -51,6 +51,9 @@
       transition: opacity 0.2s;
     }
     button:hover { opacity: 0.9; }
+    .btn-danger {
+      background: #da373c;
+    }
     .roster-list {
       max-height: 400px;
       overflow-y: auto;
@@ -109,7 +112,7 @@
 <body>
 
   <h1>⚔️ T&L Guild Party Manager</h1>
-  <div class="subtitle">Organize your guild roster into 6-player groups and export clean Discord markdown.</div>
+  <div class="subtitle">Organize your guild roster into 6-player groups and export clean Discord markdown. Auto-saves locally!</div>
 
   <div class="layout">
     <!-- LEFT PANEL: ROSTER CREATOR -->
@@ -126,6 +129,8 @@
 
       <h3>Unassigned Roster (<span id="unassignedCount">0</span>)</h3>
       <div id="roster" class="roster-list" ondragover="allowDrop(event)" ondrop="dropToRoster(event)"></div>
+      
+      <button class="btn-danger" onclick="clearData()" style="margin-top: 15px;">⚠️ Clear All Data</button>
     </div>
 
     <!-- RIGHT PANEL: PARTIES & EXPORT -->
@@ -148,6 +153,37 @@
     let players = [];
     let partyCount = 0;
 
+    // Load data on start
+    window.onload = function() {
+      loadSavedData();
+    };
+
+    function saveData() {
+      localStorage.setItem('tl_players', JSON.stringify(players));
+      localStorage.setItem('tl_partyCount', partyCount);
+    }
+
+    function loadSavedData() {
+      const savedPlayers = localStorage.getItem('tl_players');
+      const savedPartyCount = localStorage.getItem('tl_partyCount');
+
+      if (savedPartyCount) {
+        partyCount = parseInt(savedPartyCount);
+        for (let i = 1; i <= partyCount; i++) {
+          renderPartyBox(i);
+        }
+      } else {
+        addParty();
+        addParty();
+      }
+
+      if (savedPlayers) {
+        players = JSON.parse(savedPlayers);
+      }
+
+      render();
+    }
+
     function addPlayer() {
       const name = document.getElementById('pName').value.trim();
       const role = document.getElementById('pRole').value;
@@ -160,24 +196,30 @@
 
       document.getElementById('pName').value = '';
       document.getElementById('pWeapons').value = '';
+      saveData();
       render();
     }
 
     function addParty() {
       partyCount++;
+      renderPartyBox(partyCount);
+      saveData();
+    }
+
+    function renderPartyBox(num) {
       const container = document.getElementById('partiesContainer');
       const partyDiv = document.createElement('div');
       partyDiv.className = 'party-box';
-      partyDiv.id = `party_${partyCount}`;
+      partyDiv.id = `party_${num}`;
       partyDiv.setAttribute('ondragover', 'allowDrop(event)');
-      partyDiv.setAttribute('ondrop', `dropToParty(event, ${partyCount})`);
+      partyDiv.setAttribute('ondrop', `dropToParty(event, ${num})`);
       
       partyDiv.innerHTML = `
         <div class="party-title">
-          <span>Party ${partyCount}</span>
-          <span style="font-size:0.8em; color:#8a99ad;" id="count_party_${partyCount}">0/6</span>
+          <span>Party ${num}</span>
+          <span style="font-size:0.8em; color:#8a99ad;" id="count_party_${num}">0/6</span>
         </div>
-        <div class="party-slots" id="slots_party_${partyCount}"></div>
+        <div class="party-slots" id="slots_party_${num}"></div>
       `;
       container.appendChild(partyDiv);
     }
@@ -185,6 +227,12 @@
     function render() {
       const rosterDiv = document.getElementById('roster');
       rosterDiv.innerHTML = '';
+
+      // Clear current party slot containers
+      for (let i = 1; i <= partyCount; i++) {
+        const slot = document.getElementById(`slots_party_${i}`);
+        if (slot) slot.innerHTML = '';
+      }
 
       let unassigned = 0;
 
@@ -201,7 +249,7 @@
 
       document.getElementById('unassignedCount').innerText = unassigned;
 
-      // Update party counts
+      // Update party count displays
       for (let i = 1; i <= partyCount; i++) {
         const pMembers = players.filter(p => p.partyId === i);
         const countSpan = document.getElementById(`count_party_${i}`);
@@ -222,12 +270,20 @@
           <strong>${p.name}</strong> <br>
           <small style="color:#a0aec0;">${p.weapons}</small>
         </div>
-        <small style="font-weight:bold;">${p.role.toUpperCase()}</small>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <small style="font-weight:bold;">${p.role.toUpperCase()}</small>
+          <span onclick="deletePlayer('${p.id}')" style="color:#ef4444; cursor:pointer; font-weight:bold; margin-left:5px;">✕</span>
+        </div>
       `;
       return div;
     }
 
-    // Drag and Drop handlers
+    function deletePlayer(id) {
+      players = players.filter(p => p.id !== id);
+      saveData();
+      render();
+    }
+
     function allowDrop(ev) { ev.preventDefault(); }
 
     function dropToParty(ev, partyNum) {
@@ -240,6 +296,7 @@
       const player = players.find(p => p.id === id);
       if (player) {
         player.partyId = partyNum;
+        saveData();
         render();
       }
     }
@@ -250,6 +307,7 @@
       const player = players.find(p => p.id === id);
       if (player) {
         player.partyId = null;
+        saveData();
         render();
       }
     }
@@ -283,9 +341,17 @@
       document.getElementById('discordOutput').value = output;
     }
 
-    // Initialize with 2 default parties
-    addParty();
-    addParty();
+    function clearData() {
+      if (confirm("Are you sure you want to clear all players and parties?")) {
+        localStorage.clear();
+        players = [];
+        partyCount = 0;
+        document.getElementById('partiesContainer').innerHTML = '';
+        addParty();
+        addParty();
+        render();
+      }
+    }
   </script>
 </body>
 </html>
